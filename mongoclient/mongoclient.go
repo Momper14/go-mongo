@@ -3,6 +3,7 @@ package mongoclient
 import (
 	"context"
 	"fmt"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"reflect"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -16,7 +17,7 @@ type ClientConfig struct {
 	Port     string
 }
 
-// Client client for MongoDB
+// Client for MongoDB
 type Client struct {
 	database    *mongo.Database
 	collections map[string]*mongo.Collection
@@ -68,8 +69,14 @@ func (c Client) getCollection(name string) *mongo.Collection {
 	return collection
 }
 
+func (c Client) findById(id interface{}) (interface{}, error) {
+
+	return nil, nil
+}
+
 // Insert insert the entity to a collection of it's struct name and returns the id
 // entity: entity to insert
+//TODO: Insert returns the entity
 func (c Client) Insert(entity interface{}) (interface{}, error) {
 	return c.InsertInto(entity, reflect.TypeOf(entity).Name())
 }
@@ -95,6 +102,20 @@ func (c Client) InsertInto(entity interface{}, name string) (interface{}, error)
 	if err != nil {
 		return "", err
 	}
+	var id string
+	if tmp, ok := insertResult.InsertedID.(primitive.ObjectID); ok {
+		id = tmp.Hex()
+	} else {
+		fmt.Sprintf("%v", insertResult.InsertedID)
+	}
 
-	return insertResult.InsertedID, nil
+	result := collection.FindOne(context.TODO(), id) //TODO: pass bson instead of id to FindOne()
+
+	if err = result.Decode(&entity); err != nil {
+		// ErrNoDocuments means that the filter did not match any documents in the collection
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+	}
+	return entity, err
 }
