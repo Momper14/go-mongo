@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"go-mongodriver/mongoclient"
+
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -24,12 +25,10 @@ func main() {
 
 	e := Test{Name: "foo"}
 
-	var obj interface{}
-
-	if obj, err = client.Insert(e); err != nil {
+	if err = client.Insert(e, &e); err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(obj)
+		fmt.Println(e)
 	}
 
 }

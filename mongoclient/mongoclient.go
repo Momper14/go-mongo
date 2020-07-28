@@ -3,9 +3,9 @@ package mongoclient
 import (
 	"context"
 	"fmt"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"reflect"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -69,53 +69,69 @@ func (c Client) getCollection(name string) *mongo.Collection {
 	return collection
 }
 
-func (c Client) findById(id interface{}) (interface{}, error) {
+func (c Client) findByID(id interface{}, ptrResult interface{}) error {
+	if !isPointer(ptrResult) {
+		return fmt.Errorf("result must be a pointer")
+	}
 
-	return nil, nil
+	return c.findByIDFrom(id, ptrResult, reflect.TypeOf(ptrResult).Elem().Name())
+}
+
+func (c Client) findByIDFrom(id interface{}, ptrResult interface{}, collectionName string) error {
+
+	if !isPointer(ptrResult) {
+		return fmt.Errorf("result must be a pointer")
+	}
+
+	collection := c.getCollection(collectionName)
+
+	fmt.Println(bson.M{"_id": id})
+
+	return collection.FindOne(context.Background(), bson.M{"_id": id}).Decode(ptrResult)
 }
 
 // Insert insert the entity to a collection of it's struct name and returns the id
 // entity: entity to insert
-//TODO: Insert returns the entity
-func (c Client) Insert(entity interface{}) (interface{}, error) {
-	return c.InsertInto(entity, reflect.TypeOf(entity).Name())
+func (c Client) Insert(entity interface{}, ptrResult interface{}) error {
+	return c.InsertInto(entity, ptrResult, reflect.TypeOf(entity).Name())
 }
 
 // InsertInto insert the entity into the given collection and returns the id
 // entity: entity to insert
 // name: name of the collection
-func (c Client) InsertInto(entity interface{}, name string) (interface{}, error) {
+func (c Client) InsertInto(entity interface{}, ptrResult interface{}, collectionName string) error {
 
-	typeOf := reflect.TypeOf(entity)
-
-	if typeOf.Kind() == reflect.Ptr {
-		typeOf = reflect.TypeOf(&entity)
+	if !isStruct(entity) {
+		return fmt.Errorf("entity must be a struct")
 	}
 
-	if typeOf.Kind() != reflect.Struct {
-		return "", fmt.Errorf("entity must be a struct")
+	if !isPointer(ptrResult) {
+		return fmt.Errorf("result must be a pointer")
 	}
 
-	collection := c.getCollection(name)
+	collection := c.getCollection(collectionName)
 
 	insertResult, err := collection.InsertOne(context.TODO(), entity)
 	if err != nil {
-		return "", err
-	}
-	var id string
-	if tmp, ok := insertResult.InsertedID.(primitive.ObjectID); ok {
-		id = tmp.Hex()
-	} else {
-		fmt.Sprintf("%v", insertResult.InsertedID)
+		return err
 	}
 
-	result := collection.FindOne(context.TODO(), id) //TODO: pass bson instead of id to FindOne()
+	return c.findByIDFrom(insertResult.InsertedID, ptrResult, collectionName)
+}
 
-	if err = result.Decode(&entity); err != nil {
-		// ErrNoDocuments means that the filter did not match any documents in the collection
-		if err == mongo.ErrNoDocuments {
-			return nil, nil
-		}
+func isStruct(i interface{}) bool {
+	if reflect.TypeOf(i).Kind() == reflect.Struct {
+		return true
 	}
-	return entity, err
+
+	return false
+}
+func isPointer(i interface{}) bool {
+	typeOf := reflect.TypeOf(i)
+
+	if typeOf.Kind() == reflect.Ptr {
+		return typeOf.Elem().Kind() == reflect.Struct
+	}
+
+	return false
 }
