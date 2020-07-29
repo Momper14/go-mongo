@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -70,7 +71,7 @@ func (c Client) getCollection(name string) *mongo.Collection {
 }
 
 func (c Client) findByID(id interface{}, ptrResult interface{}) error {
-	if !isPointer(ptrResult) {
+	if !isPointerOfStruct(ptrResult) {
 		return fmt.Errorf("result must be a pointer")
 	}
 
@@ -79,13 +80,11 @@ func (c Client) findByID(id interface{}, ptrResult interface{}) error {
 
 func (c Client) findByIDFrom(id interface{}, ptrResult interface{}, collectionName string) error {
 
-	if !isPointer(ptrResult) {
+	if !isPointerOfStruct(ptrResult) {
 		return fmt.Errorf("result must be a pointer")
 	}
 
 	collection := c.getCollection(collectionName)
-
-	fmt.Println(bson.M{"_id": id})
 
 	return collection.FindOne(context.Background(), bson.M{"_id": id}).Decode(ptrResult)
 }
@@ -105,7 +104,7 @@ func (c Client) InsertInto(entity interface{}, ptrResult interface{}, collection
 		return fmt.Errorf("entity must be a struct")
 	}
 
-	if !isPointer(ptrResult) {
+	if !isPointerOfStruct(ptrResult) {
 		return fmt.Errorf("result must be a pointer")
 	}
 
@@ -119,6 +118,61 @@ func (c Client) InsertInto(entity interface{}, ptrResult interface{}, collection
 	return c.findByIDFrom(insertResult.InsertedID, ptrResult, collectionName)
 }
 
+func (c Client) saveTo(entity interface{}, ptrResult interface{}, collectionName string) error {
+
+	var (
+		id     reflect.Value
+		exists bool
+		err    error
+		ok     bool
+	)
+	if !isStruct(entity) {
+		return fmt.Errorf("entity must be a struct")
+	}
+	if !isPointerOfStruct(ptrResult) {
+		return fmt.Errorf("result must be a pointer")
+	}
+
+	if id, ok = structFieldValueByTag(entity, "bson", "_id"); !ok {
+		//TODO: add support for structs without _id
+		return fmt.Errorf("the struct must have an _id Field")
+	}
+	//if the object id is nil, we consider the object as new object and insert it into db
+	if id.Interface() == nil {
+		return c.InsertInto(entity, ptrResult, collectionName)
+	}
+	//if there exist an id,we check if the object is given in db, if so we update it, otherwise we insert it as a new object
+	if exists, err = c.ExistsIn(id, collectionName); err != nil {
+		return err
+	}
+	if !exists {
+		return c.InsertInto(entity, ptrResult, collectionName)
+	}
+	// TODO: do update the object
+}
+
+func arrayContains(arr []string, str string) bool {
+	for _, a := range arr {
+		if a == str {
+			return true
+		}
+	}
+	return false
+}
+
+func structFieldValueByTag(s interface{}, tagKey, tagValue string) (reflect.Value, bool) {
+	rt := reflect.TypeOf(s)
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		v := field.Tag.Get(tagKey)
+		arr := strings.Split(v, ",")
+		if arrayContains(arr, tagValue) {
+			return reflect.ValueOf(s).FieldByIndex(field.Index), true
+		}
+	}
+	return reflect.Value{}, false
+}
+
 func isStruct(i interface{}) bool {
 	if reflect.TypeOf(i).Kind() == reflect.Struct {
 		return true
@@ -126,7 +180,8 @@ func isStruct(i interface{}) bool {
 
 	return false
 }
-func isPointer(i interface{}) bool {
+
+func isPointerOfStruct(i interface{}) bool {
 	typeOf := reflect.TypeOf(i)
 
 	if typeOf.Kind() == reflect.Ptr {
@@ -134,4 +189,18 @@ func isPointer(i interface{}) bool {
 	}
 
 	return false
+}
+
+func (c Client) ExistsIn(id interface{}, collectionName string) (bool, error) {
+
+	collection := c.getCollection(collectionName)
+	opt := options.Find()
+	opt.SetLimit(1)
+	if err := collection.FindOne(context.Background(), bson.M{"_id": id}).Err(); err != nil {
+		if err != mongo.ErrNoDocuments {
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
 }
