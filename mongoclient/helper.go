@@ -44,3 +44,19 @@ func isPointerOfStruct(i interface{}) bool {
 
 	return false
 }
+func isPointerOfSliceOfStruct(i interface{}) bool {
+	typeOf := reflect.TypeOf(i)
+
+	if typeOf.Kind() != reflect.Ptr {
+		return false
+	}
+
+	if typeOf.Elem().Kind() != reflect.Slice {
+		return false
+	}
+
+	if typeOf.Elem().Elem().Kind() != reflect.Struct {
+		return false
+	}
+	return true
+}

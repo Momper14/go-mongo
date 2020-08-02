@@ -69,6 +69,37 @@ func (c Client) FindByIDFrom(id interface{}, ptrResult interface{}, collectionNa
 	return collection.FindOne(context.Background(), bson.M{"_id": id}).Decode(ptrResult)
 }
 
+func (c Client) FindAll(ptrResult interface{}) error {
+	if !isPointerOfSliceOfStruct(ptrResult) {
+		return fmt.Errorf("result must be a pointer")
+	}
+
+	return c.FindAllFrom(ptrResult, reflect.TypeOf(ptrResult).Elem().Elem().Name())
+}
+
+func (c Client) FindAllFrom(ptrResult interface{}, collectionName string) error {
+
+	var (
+		cursor *mongo.Cursor
+		err    error
+	)
+
+	if !isPointerOfSliceOfStruct(ptrResult) {
+		return fmt.Errorf("result must be a pointer")
+	}
+
+	collection := c.getCollection(collectionName)
+
+	if cursor, err = collection.Find(context.TODO(), bson.D{}); err != nil {
+		return err
+	}
+	// get a list of all returned documents and
+	if err = cursor.All(context.TODO(), ptrResult); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Insert insert the entity to a collection of it's struct name and returns the id
 // entity: entity to insert
 func (c Client) Insert(entity interface{}, ptrResult interface{}) error {
@@ -179,4 +210,41 @@ func (c Client) ExistsIn(entity interface{}, collectionName string) (bool, error
 	}
 
 	return count >= 1, nil
+}
+func (c Client) Delete(entity interface{}) error {
+	return c.DeleteFrom(entity, reflect.TypeOf(entity).Name())
+}
+func (c Client) DeleteFrom(entity interface{}, collectionName string) error {
+
+	var (
+		id     interface{}
+		err    error
+		result *mongo.DeleteResult
+	)
+
+	if !isStruct(entity) {
+		return fmt.Errorf("entity must be a struct")
+	}
+
+	if idTmp, ok := structFieldValueByTag(entity, "bson", "_id"); ok {
+		id = idTmp.Interface()
+	} else {
+		//TODO: add support for structs without _id
+		return fmt.Errorf("the struct must have an _id Field")
+	}
+
+	if ok, err := c.ExistsIn(entity, collectionName); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("the entity %v doesnt exists in collection %s", entity, collectionName)
+	}
+	collection := c.getCollection(collectionName)
+	if result, err = collection.DeleteOne(context.Background(), bson.M{"_id": id}); err != nil {
+		return err
+	}
+	if result.DeletedCount == 0 {
+		return fmt.Errorf("could not delete entity %v", entity)
+	}
+
+	return nil
 }
