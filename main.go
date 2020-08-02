@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"go-mongodriver/mongoclient"
+	"log"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -26,9 +27,17 @@ func main() {
 	e := Test{Name: "foo"}
 
 	if err = client.Insert(e, &e); err != nil {
-		fmt.Println(err)
-	} else {
-		fmt.Println(e)
+		log.Fatal(err)
 	}
+
+	fmt.Println(e)
+
+	e.Name = "bar"
+
+	if err = client.Save(e, &e); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(e)
 
 }
