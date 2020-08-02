@@ -131,7 +131,7 @@ func (c Client) SaveTo(entity interface{}, ptrResult interface{}, collectionName
 	}
 
 	//if there exist an id,we check if the object is given in db, if so we update it, otherwise we insert it as a new object
-	if exists, err = c.ExistsIn(id, collectionName); err != nil {
+	if exists, err = c.ExistsIn(entity, collectionName); err != nil {
 		return err
 	}
 
@@ -155,7 +155,11 @@ func (c Client) Exists(entity interface{}) (bool, error) {
 
 func (c Client) ExistsIn(entity interface{}, collectionName string) (bool, error) {
 
-	var id interface{}
+	var (
+		id    interface{}
+		count int64
+		err   error
+	)
 
 	if !isStruct(entity) {
 		return false, fmt.Errorf("entity must be a struct")
@@ -170,11 +174,9 @@ func (c Client) ExistsIn(entity interface{}, collectionName string) (bool, error
 
 	collection := c.getCollection(collectionName)
 
-	if err := collection.FindOne(context.Background(), bson.M{"_id": id}).Err(); err != nil {
-		if err != mongo.ErrNoDocuments {
-			return false, err
-		}
-		return false, nil
+	if count, err = collection.CountDocuments(context.Background(), bson.M{"_id": id}); err != nil {
+		return false, err
 	}
-	return true, nil
+
+	return count >= 1, nil
 }
